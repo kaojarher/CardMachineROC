@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>集卡販賣機</title>
+    <style>
+        :root {
+            --machine-bg: #1a1a1a;
+            --machine-border: #2e2e2e;
+            --binder-bg: #2b1d1d; /* 皮革質感的暗紅集卡冊背景 */
+            --gold: #ffd700;
+            --neon-blue: #00f3ff;
+            --neon-purple: #da00ff;
+            --card-image-url: url('game_cards_atlas_7x3.png');
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Noto Sans TC', sans-serif;
+        }
+
+        body {
+            background: linear-gradient(135deg, #3a4146 0%, #212529 100%);
+            background-attachment: fixed;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        /* 頂部頁面切換標籤 */
+        .tab-container {
+            display: flex;
+            margin-bottom: -4px;
+            position: relative;
+            z-index: 99;
+            width: 100%;
+            max-width: 850px;
+        }
+        
+        .tab-btn {
+            background-color: #444;
+            color: #aaa;
+            border: 4px solid var(--machine-border);
+            border-bottom: none;
+            padding: 10px 25px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            border-radius: 10px 10px 0 0;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-right: 10px; 
+            -webkit-tap-highlight-color: transparent; 
+        }
+
+        .tab-btn:last-child {
+            margin-right: 0;
+        }
+
+        .tab-btn.active {
+            background-color: var(--machine-bg);
+            color: var(--gold);
+            padding-top: 12px;
+            margin-top: -2px;
+            text-shadow: 0 0 5px rgba(255,215,0,0.5);
+        }
+        .tab-btn.binder-tab.active {
+            background-color: var(--binder-bg);
+        }
+
+        /* 核心容器 */
+        .main-container {
+            width: 100%;
+            max-width: 850px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            position: relative;
+        }
+
+        /* 頁面分流顯示控管 */
+        .page {
+            display: none;
+            padding: 25px;
+            border: 10px solid var(--machine-border);
+            border-radius: 0 15px 15px 15px;
+        }
+        .page.active {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        /* 1. 販賣機頁面樣式 */
+        #machine-page {
+            background-color: var(--machine-bg);
+        }
+
+        /* 2. 集卡冊頁面樣式 */
+        #binder-page {
+            background-color: var(--binder-bg);
+            border-color: #422f2f;
+            box-shadow: inset 0 0 40px rgba(0,0,0,0.8);
+        }
+        .binder-welcome {
+            text-align: center;
+            color: #fff;
+            border-bottom: 2px dashed rgba(255,255,255,0.1);
+            padding-bottom: 15px;
+        }
+        .binder-welcome h2 {
+            color: var(--gold);
+            letter-spacing: 2px;
+        }
+
+        /* 共通：7x3 卡片展示窗 */
+        .card-display-window {
+            background-color: #252525;
+            border: 8px solid #3a3a3a;
+            border-radius: 8px;
+            padding: 15px;
+            display: grid;
+            grid-template-columns: repeat(7, 1fr); 
+            gap: 10px; 
+            justify-content: center; 
+            box-shadow: inset 0 0 15px rgba(0,0,0,0.6);
+        }
+
+        /* 集卡冊專屬展示窗 */
+        .binder-grid {
+            background-color: #1f1414;
+            border-color: #2d1d1d;
+            padding: 20px;
+            gap: 15px;
+        }
+
+        /* 單張卡片樣式 - 精確切圖定位 */
+        .card-slot {
+            background-image: var(--card-image-url);
+            background-size: 700% 300%;
+            background-repeat: no-repeat;
+            border-radius: 6px;
+            border: 2px solid #555;
+            position: relative;
+            aspect-ratio: 2.5 / 3.5;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            filter: grayscale(100%) brightness(25%);
+            opacity: 0.8;
+        }
+
+        /* 集卡冊未解鎖時顯示問號 */
+        .binder-grid .card-slot:not(.active)::after {
+            content: "?";
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: rgba(255, 255, 255, 0.15);
+            font-size: 1.8rem;
+            font-weight: 900;
+        }
+
+        /* 已收集卡片激活狀態 */
+        .card-slot.active {
+            filter: grayscale(0%) brightness(100%);
+            opacity: 1;
+            border-color: var(--gold);
+            box-shadow: 0 0 8px rgba(255, 215, 0, 0.6);
+            cursor: pointer;
+            animation: unlockGlow 0.5s ease-out;
+        }
+
+        .card-slot.active:hover {
+            transform: scale(1.1); 
+            z-index: 2;
+            box-shadow: 0 0 15px var(--gold);
+        }
+
+        .binder-grid.select-mode .card-slot.active:hover {
+            transform: none;
+            z-index: auto;
+        }
+
+        @keyframes unlockGlow {
+            0% { transform: scale(1); filter: brightness(2); }
+            50% { transform: scale(1.15); }
+            100% { transform: scale(1); filter: brightness(1); }
+        }
+
+        /* 選擇列印核取方塊樣式 */
+        .card-checkbox {
+            display: none;
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            width: 22px;
+            height: 22px;
+            z-index: 5;
+            cursor: pointer;
+            accent-color: var(--gold);
+        }
+        .select-mode .card-slot.active .card-checkbox {
+            display: block;
+        }
+
+        /* 機台下方操作區 */
+        .control-panel {
+            display: flex;
+            justify-content: center; 
+            align-items: center;
+            margin-top: 10px;
+            gap: 40px;
+        }
+
+        .coin-slot {
+            width: 80px;
+            height: 100px;
+            background: linear-gradient(135deg, #444, #222);
+            border: 3px solid #888;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-around;
+            padding: 8px 0;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            transition: transform 0.1s;
+        }
+        .coin-slot:active {
+            transform: scale(0.95);
+        }
+        .coin-entry {
+            width: 8px;
+            height: 45px;
+            background-color: #000;
+            border-radius: 4px;
+            border-right: 2px solid #555;
+            border-bottom: 2px solid #555;
+        }
+        .coin-slot-label {
+            color: var(--neon-blue);
+            font-size: 0.55rem;
+            font-weight: bold;
+            text-shadow: 0 0 5px var(--neon-blue);
+            text-align: center;
+        }
+
+        .neon-light {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: radial-gradient(circle, #fff, var(--neon-blue));
+            box-shadow: 0 0 15px var(--neon-blue), inset 0 0 10px #fff;
+            animation: pulseLight 2s infinite alternate;
+        }
+
+        @keyframes pulseLight {
+            from { box-shadow: 0 0 10px var(--neon-blue); }
+            to { box-shadow: 0 0 25px var(--neon-blue); }
+        }
+
+        .push-section {
+            background-color: #111;
+            border: 4px solid #333;
+            border-radius: 10px;
+            padding: 15px;
+            text-align: center;
+            position: relative;
+            max-width: 400px;
+            margin-left: auto;
+            margin-right: auto;
+            width: 100%;
+        }
+
+        .push-button {
+            background: linear-gradient(180deg, #ffffff 0%, #e0e0e0 100%);
+            border: 4px solid #b5b5b5;
+            border-radius: 8px;
+            width: 100%;
+            padding: 15px 0;
+            font-size: 1.5rem;
+            font-weight: 900;
+            color: #d11a2a;
+            cursor: pointer;
+            box-shadow: 0 6px 0 #999, 0 8px 20px rgba(0,0,0,0.7);
+            transition: all 0.1s;
+            letter-spacing: 4px;
+        }
+
+        .push-button:active {
+            transform: translateY(4px);
+            box-shadow: 0 2px 0 #999, 0 4px 10px rgba(0,0,0,0.7);
+        }
+
+        /* 卡片彈出區 */
+        .gacha-output {
+            position: absolute;
+            bottom: 125%;
+            left: 50%;
+            transform: translateX(-50%) scale(0);
+            width: 110px;
+            aspect-ratio: 2.5 / 3.5;
+            z-index: 10;
+            transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            cursor: pointer;
+            border-radius: 8px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+            background-image: var(--card-image-url);
+            background-size: 700% 300%;
+            background-repeat: no-repeat;
+        }
+
+        .gacha-output.dispense {
+            transform: translateX(-50%) scale(1) translateY(-20px);
+            animation: floatCard 2s ease-in-out infinite alternate;
+        }
+
+        @keyframes floatCard {
+            0% { transform: translateX(-50%) scale(1) translateY(-20px); }
+            100% { transform: translateX(-50%) scale(1) translateY(-30px); }
+        }
+
+        /* 大圖預覽燈箱 */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(5px);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+
+        .modal-overlay.show {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .large-card {
+            width: 280px;
+            aspect-ratio: 2.5 / 3.5;
+            border-radius: 12px;
+            border: 5px solid var(--gold);
+            box-shadow: 0 0 30px var(--gold), 0 10px 40px rgba(0,0,0,0.8);
+            background-image: var(--card-image-url);
+            background-size: 700% 300%;
+            background-repeat: no-repeat;
+            transform: scale(0.7) rotate(-5deg);
+            transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        .modal-overlay.show .large-card {
+            transform: scale(1) rotate(0deg);
+        }
+
+        .modal-hint {
+            position: absolute;
+            bottom: 30px;
+            color: #aaa;
+            font-size: 0.9rem;
+            letter-spacing: 1px;
+            animation: pulseText 1.5s infinite alternate;
+        }
+
+        @keyframes pulseText {
+            from { opacity: 0.5; }
+            to { opacity: 1; }
+        }
+
+        /* 提示彈窗 */
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            background: rgba(0,0,0,0.9);
+            color: #fff;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            opacity: 0;
+            transition: opacity 0.3s;
+            pointer-events: none;
+            z-index: 999;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        }
+        .toast.show {
+            opacity: 1;
+        }
+
+        /* 控制按鈕區 */
+        .print-btn-container {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .print-btn {
+            background: linear-gradient(135deg, #ffd700, #ffa500);
+            color: #1a1a1a;
+            border: none;
+            padding: 12px 25px;
+            font-size: 1rem;
+            font-weight: bold;
+            border-radius: 25px;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(255, 215, 0, 0.4);
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .print-btn.cancel {
+            background: linear-gradient(135deg, #666, #444);
+            color: #fff;
+            box-shadow: none;
+        }
+        .print-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(255, 215, 0, 0.6);
+        }
+        .print-btn.cancel:hover {
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+        }
+        .print-btn:active {
+            transform: translateY(1px);
+        }
+
+        /* 網頁上「預覽列印」燈箱 */
+        .preview-modal-content {
+            background-color: #222;
+            border: 4px solid var(--gold);
+            border-radius: 15px;
+            width: 90%;
+            max-width: 700px;
+            max-height: 80vh;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            color: #fff;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+        }
+        .preview-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid #444;
+            padding-bottom: 15px;
+            margin-bottom: 15px;
+        }
+        .preview-body {
+            overflow-y: auto;
+            flex: 1;
+            padding-right: 10px;
+        }
+        .preview-grid-view {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+            justify-items: center;
+        }
+        .preview-card-item {
+            width: 140px;
+            aspect-ratio: 2.5 / 3.5;
+            border-radius: 6px;
+            border: 2px solid #555;
+            background-size: 700% 300%;
+            background-image: var(--card-image-url);
+        }
+        .preview-card-front {
+            background-repeat: no-repeat;
+        }
+        .preview-card-back {
+            background-repeat: no-repeat;
+            background-position: 100% 100%; /* 精確讀取最右下角的卡片背面 */
+        }
+        .preview-pair {
+            display: flex;
+            gap: 10px;
+            background-color: #1a1a1a;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #333;
+        }
+
+        /* 實際紙張列印用容器 (預設完全在網頁上隱藏) */
+        #print-container {
+            display: none;
+        }
+        
+        @media (max-width: 768px) {
+            .card-display-window {
+                grid-template-columns: repeat(3, 1fr); 
+            }
+        }
+
+        /* ==================== 完美省紙與對折列印排版 ==================== */
+        @media print {
+            html, body {
+                margin: 0 !important;
+                padding: 0 !important;
+                background: none !important;
+                background-image: none !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+
+            .tab-container, 
+            .main-container, 
+            .modal-overlay, 
+            .toast, 
+            #preview-modal {
+                display: none !important;
+            }
+            
+            #print-container {
+                display: block !important;
+                width: 100% !important;
+                padding: 0 !important;
+            }
+
+            .print-title {
+                text-align: center;
+                font-size: 16px;
+                color: #333;
+                margin: 10px 0;
+                font-weight: bold;
+                font-family: sans-serif;
+            }
+
+            /* 卡片外層群組：將正面與背面無縫橫向合併 */
+            .print-card-group {
+                display: block !important;
+                width: 12.6cm !important; /* 正 6.3cm + 反 6.3cm = 12.6cm */
+                height: 8.8cm !important;
+                margin: 0 auto 0.4cm auto !important; /* 卡片組與卡片組之間保留微小間隙方便剪裁 */
+                page-break-inside: avoid !important;
+                font-size: 0 !important; /* 消除 inline-block 造成的微小空格位移 */
+            }
+
+            /* 列印卡片單元：完美綁定神奇寶貝官方標準 6.3cm x 8.8cm */
+            .print-card-unit {
+                display: inline-block !important;
+                width: 6.3cm !important;
+                height: 8.8cm !important;
+                box-sizing: border-box !important;
+                border: 0.5px solid #bbb !important; /* 精細邊框輔助剪裁 */
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+                vertical-align: top !important;
+                background-image: var(--card-image-url) !important;
+                background-size: 700% 300% !important;
+                background-repeat: no-repeat !important;
+            }
+
+            /* 修正左右相接處的圓角：
+               左卡(正面)右側不設圓角，右卡(背面)左側不設圓角，
+               這樣折起來貼合時，邊角圓弧最完美！ */
+            .print-card-front {
+                border-radius: 0.35cm 0 0 0.35cm !important; 
+                border-right: none !important; /* 拔除中間的分界實線，改為隱形折線，列印對折超精準 */
+            }
+
+            .print-card-back {
+                background-position: 100% 100% !important; /* 精確讀取最右下角的卡片背面 */
+                border-radius: 0 0.35cm 0.35cm 0 !important;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="tab-container">
+        <button class="tab-btn active" onclick="switchPage('machine')">🎰 卡片販賣機</button>
+        <button class="tab-btn binder-tab" onclick="switchPage('binder')">📖 我的集卡冊</button>
+    </div>
+
+    <div class="main-container">
+        
+        <!-- 頁面一：卡片販賣機 -->
+        <div id="machine-page" class="page active">
+            <div class="header">
+                <h1 style="color: #fff; text-shadow: 0 2px 4px rgba(0,0,0,0.5);">🎰 卡片販賣機</h1>
+                <div class="stats" style="color: #ccc; margin: 10px 0;">
+                    <div>擁有金幣: <span id="coin-count" style="color: var(--gold); font-weight: bold;">5</span> 枚</div>
+                    <div>收集進度: <span id="progress-text-machine">0/21</span></div>
+                </div>
+            </div>
+
+            <div class="card-display-window" id="display-window-machine"></div>
+
+            <div class="control-panel">
+                <div class="coin-slot" onclick="insertCoin()">
+                    <div class="coin-entry"></div>
+                    <div class="coin-slot-label">INSERT<br>COIN</div>
+                </div>
+                <div class="neon-light"></div>
+            </div>
+
+            <div class="push-section">
+                <div class="gacha-output" id="gacha-card-output" onclick="previewCurrentDrawnCard()"></div>
+                <button class="push-button" onclick="drawCard()">PUSH</button>
+            </div>
+        </div>
+
+        <!-- 頁面二：精美集卡冊 -->
+        <div id="binder-page" class="page">
+            <div class="binder-welcome">
+                <h2>專屬典藏集卡冊</h2>
+                <div class="stats">
+                    <div style="color: #aaa;">目前已點亮收藏進度：</div>
+                    <div style="color: var(--gold); font-weight: bold; font-size: 1.1rem;"><span id="progress-text-binder">0/21</span></div>
+                </div>
+            </div>
+
+            <div class="card-display-window binder-grid" id="display-window-binder"></div>
+
+            <div class="print-btn-container" id="normal-binder-controls">
+                <button class="print-btn" onclick="startSelectionMode()">🖨️ 選擇卡片列印 (省紙對折版)</button>
+            </div>
+            <div class="print-btn-container" id="selection-binder-controls" style="display: none;">
+                <button class="print-btn cancel" onclick="cancelSelectionMode()">取消</button>
+                <button class="print-btn" onclick="confirmAndPreviewPrint()">👀 預覽已選取的卡片</button>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- 預覽列印燈箱 -->
+    <div class="modal-overlay" id="preview-modal">
+        <div class="preview-modal-content" onclick="event.stopPropagation()">
+            <div class="preview-header">
+                <h3 style="color: var(--gold);">🖨️ 列印預覽 (無縫橫向對折排版)</h3>
+                <button class="print-btn" style="padding: 6px 15px; font-size: 0.9rem;" onclick="closePreviewModal()">關閉</button>
+            </div>
+            <div class="preview-body">
+                <p style="font-size: 0.85rem; color: #ccc; margin-bottom: 15px; text-align: center;">
+                    正反面已無縫連接。列印後直接**沿中間對折並黏合**即可裁切，完全零浪費、極速對齊！
+                </p>
+                <div class="preview-grid-view" id="preview-grid-items"></div>
+            </div>
+            <div class="print-btn-container" style="margin-top: 15px; border-top: 1px solid #444; padding-top: 15px;">
+                <button class="print-btn" onclick="triggerSystemPrint()">確定送出列印</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 實際紙張列印用隱藏容器 -->
+    <div id="print-container">
+        <div class="print-title">凡人修真傳 1:1 省紙對折版（展開 12.6cm x 8.8cm，折合 6.3cm x 8.8cm）</div>
+        <div class="print-grid" id="print-grid-content"></div>
+    </div>
+
+    <!-- 大圖預覽燈箱 -->
+    <div class="modal-overlay" id="card-modal" onclick="closeModal()">
+        <div class="large-card" id="modal-card-content" onclick="event.stopPropagation()"></div>
+        <div class="modal-hint">點擊任意處關閉</div>
+    </div>
+
+    <div class="toast" id="toast-message">提示訊息</div>
+
+    <script>
+        const cardDatabase = [
+            { id: 1, col: 0, row: 0 }, { id: 2, col: 1, row: 0 }, { id: 3, col: 2, row: 0 }, { id: 4, col: 3, row: 0 }, { id: 5, col: 4, row: 0 }, { id: 6, col: 5, row: 0 }, { id: 7, col: 6, row: 0 },
+            { id: 8, col: 0, row: 1 }, { id: 9, col: 1, row: 1 }, { id: 10, col: 2, row: 1 }, { id: 11, col: 3, row: 1 }, { id: 12, col: 4, row: 1 }, { id: 13, col: 5, row: 1 }, { id: 14, col: 6, row: 1 },
+            { id: 15, col: 0, row: 2 }, { id: 16, col: 1, row: 2 }, { id: 17, col: 2, row: 2 }, { id: 18, col: 3, row: 2 }, { id: 19, col: 4, row: 2 }, { id: 20, col: 5, row: 2 }, { id: 21, col: 6, row: 2 }
+        ];
+
+        let userCoins = 5;
+        let collectedCards = new Set();
+        let lastDrawnCardId = null;
+        let isSelectionMode = false;
+
+        function switchPage(pageName) {
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            
+            if(pageName === 'machine') {
+                document.getElementById('machine-page').classList.add('active');
+                document.querySelectorAll('.tab-btn')[0].classList.add('active');
+                cancelSelectionMode();
+            } else {
+                document.getElementById('binder-page').classList.add('active');
+                document.querySelectorAll('.tab-btn')[1].classList.add('active');
+            }
+        }
+
+        function initDisplay() {
+            const machineWindow = document.getElementById('display-window-machine');
+            const binderWindow = document.getElementById('display-window-binder');
+            
+            machineWindow.innerHTML = '';
+            binderWindow.innerHTML = '';
+            
+            cardDatabase.forEach(card => {
+                const posX = (card.col * 100) / 6;
+                const posY = (card.row * 100) / 2;
+                
+                const mSlot = document.createElement('div');
+                mSlot.className = 'card-slot';
+                mSlot.id = `machine-slot-${card.id}`;
+                mSlot.style.backgroundPosition = `${posX}% ${posY}%`;
+                mSlot.onclick = () => handleCardClick(card.id);
+                machineWindow.appendChild(mSlot);
+                
+                const bSlot = document.createElement('div');
+                bSlot.className = 'card-slot';
+                bSlot.id = `binder-slot-${card.id}`;
+                bSlot.style.backgroundPosition = `${posX}% ${posY}%`;
+                bSlot.onclick = (e) => handleBinderCardClick(e, card.id);
+
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.className = 'card-checkbox';
+                checkbox.id = `checkbox-${card.id}`;
+                checkbox.onclick = (e) => e.stopPropagation(); 
+                bSlot.appendChild(checkbox);
+
+                binderWindow.appendChild(bSlot);
+            });
+            updateStats();
+        }
+
+        function handleCardClick(cardId) {
+            if (collectedCards.has(cardId)) {
+                const card = cardDatabase.find(c => c.id === cardId);
+                if (card) openModal(card);
+            } else {
+                showToast("該卡片尚未收藏，去抽卡機試試手氣吧！");
+            }
+        }
+
+        function handleBinderCardClick(event, cardId) {
+            if (isSelectionMode) {
+                if (collectedCards.has(cardId)) {
+                    const checkbox = document.getElementById(`checkbox-${cardId}`);
+                    checkbox.checked = !checkbox.checked;
+                }
+            } else {
+                handleCardClick(cardId);
+            }
+        }
+
+        function updateStats() {
+            document.getElementById('coin-count').innerText = userCoins;
+            const progress = `${collectedCards.size}/${cardDatabase.length}`;
+            document.getElementById('progress-text-machine').innerText = progress;
+            document.getElementById('progress-text-binder').innerText = progress;
+        }
+
+        function insertCoin() {
+            userCoins += 1;
+            showToast("投幣成功！獲得 1 枚金幣");
+            updateStats();
+        }
+
+        let isDrawing = false;
+        function drawCard() {
+            if (isDrawing) return;
+            if (userCoins <= 0) {
+                showToast("餘額不足！請點擊投幣口投幣");
+                return;
+            }
+
+            isDrawing = true;
+            userCoins--;
+            updateStats();
+
+            const randomIndex = Math.floor(Math.random() * cardDatabase.length);
+            const drawnCard = cardDatabase[randomIndex];
+            lastDrawnCardId = drawnCard.id;
+
+            const posX = (drawnCard.col * 100) / 6;
+            const posY = (drawnCard.row * 100) / 2;
+
+            const outputArea = document.getElementById('gacha-card-output');
+            outputArea.className = 'gacha-output'; 
+            outputArea.style.backgroundPosition = `${posX}% ${posY}%`;
+            outputArea.style.border = "3px solid var(--gold)";
+
+            setTimeout(() => {
+                outputArea.classList.add('dispense');
+                
+                document.getElementById(`machine-slot-${drawnCard.id}`).classList.add('active');
+                document.getElementById(`binder-slot-${drawnCard.id}`).classList.add('active');
+
+                if (!collectedCards.has(drawnCard.id)) {
+                    collectedCards.add(drawnCard.id);
+                    showToast(`新卡入手！已收入您的集卡冊中！`);
+                } else {
+                    showToast(`抽到重複卡片囉！`);
+                }
+
+                updateStats();
+                
+                if (collectedCards.size === cardDatabase.length) {
+                    setTimeout(() => {
+                        alert("🎉 恭喜！您已成功集齊全套 21 張卡片，完成終極大滿貫！");
+                    }, 800);
+                }
+            }, 100);
+
+            setTimeout(() => {
+                isDrawing = false;
+            }, 1200);
+        }
+
+        function previewCurrentDrawnCard() {
+            if (lastDrawnCardId !== null) {
+                const card = cardDatabase.find(c => c.id === lastDrawnCardId);
+                if (card) openModal(card);
+            }
+        }
+
+        function openModal(card) {
+            const modal = document.getElementById('card-modal');
+            const content = document.getElementById('modal-card-content');
+            const posX = (card.col * 100) / 6;
+            const posY = (card.row * 100) / 2;
+            
+            content.style.backgroundPosition = `${posX}% ${posY}%`;
+            modal.classList.add('show');
+        }
+
+        function closeModal() {
+            document.getElementById('card-modal').classList.remove('show');
+        }
+
+        function startSelectionMode() {
+            if (collectedCards.size === 0) {
+                showToast("您尚未收藏任何卡牌，快去抽卡吧！");
+                return;
+            }
+            isSelectionMode = true;
+            document.getElementById('display-window-binder').classList.add('select-mode');
+            document.getElementById('normal-binder-controls').style.display = 'none';
+            document.getElementById('selection-binder-controls').style.display = 'flex';
+
+            cardDatabase.forEach(card => {
+                const cb = document.getElementById(`checkbox-${card.id}`);
+                if (collectedCards.has(card.id)) {
+                    cb.checked = true;
+                } else {
+                    cb.checked = false;
+                }
+            });
+            showToast("請勾選您想列印的卡片。");
+        }
+
+        function cancelSelectionMode() {
+            isSelectionMode = false;
+            document.getElementById('display-window-binder').classList.remove('select-mode');
+            document.getElementById('normal-binder-controls').style.display = 'flex';
+            document.getElementById('selection-binder-controls').style.display = 'none';
+        }
+
+        function confirmAndPreviewPrint() {
+            const selectedIds = [];
+            cardDatabase.forEach(card => {
+                const cb = document.getElementById(`checkbox-${card.id}`);
+                if (cb && cb.checked && collectedCards.has(card.id)) {
+                    selectedIds.push(card.id);
+                }
+            });
+
+            if (selectedIds.length === 0) {
+                showToast("請至少勾選一張卡片進行列印！");
+                return;
+            }
+
+            const previewGrid = document.getElementById('preview-grid-items');
+            previewGrid.innerHTML = '';
+
+            selectedIds.forEach(id => {
+                const card = cardDatabase.find(c => c.id === id);
+                const posX = (card.col * 100) / 6;
+                const posY = (card.row * 100) / 2;
+
+                const pairDiv = document.createElement('div');
+                pairDiv.className = 'preview-pair';
+
+                const frontDiv = document.createElement('div');
+                frontDiv.className = 'preview-card-item preview-card-front';
+                frontDiv.style.backgroundPosition = `${posX}% ${posY}%`;
+
+                const backDiv = document.createElement('div');
+                backDiv.className = 'preview-card-item preview-card-back';
+
+                pairDiv.appendChild(frontDiv);
+                pairDiv.appendChild(backDiv);
+                previewGrid.appendChild(pairDiv);
+            });
+
+            document.getElementById('preview-modal').classList.add('show');
+        }
+
+        function closePreviewModal() {
+            document.getElementById('preview-modal').classList.remove('show');
+        }
+
+        function triggerSystemPrint() {
+            const printGrid = document.getElementById('print-grid-content');
+            printGrid.innerHTML = '';
+
+            let hasPrinted = false;
+            cardDatabase.forEach(card => {
+                const cb = document.getElementById(`checkbox-${card.id}`);
+                if (cb && cb.checked && collectedCards.has(card.id)) {
+                    hasPrinted = true;
+                    const posX = (card.col * 100) / 6;
+                    const posY = (card.row * 100) / 2;
+
+                    // 創建一個包裹卡片正反面的 Container
+                    const cardGroup = document.createElement('div');
+                    cardGroup.className = 'print-card-group';
+
+                    // 正面
+                    const frontCard = document.createElement('div');
+                    frontCard.className = 'print-card-unit print-card-front';
+                    frontCard.style.backgroundPosition = `${posX}% ${posY}%`;
+
+                    // 背面
+                    const backCard = document.createElement('div');
+                    backCard.className = 'print-card-unit print-card-back';
+
+                    cardGroup.appendChild(frontCard);
+                    cardGroup.appendChild(backCard);
+                    printGrid.appendChild(cardGroup);
+                }
+            });
+
+            if (hasPrinted) {
+                closePreviewModal();
+                window.print();
+            }
+        }
+
+        function showToast(message) {
+            const toast = document.getElementById('toast-message');
+            toast.innerText = message;
+            toast.classList.add('show');
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 2500);
+        }
+
+        initDisplay();
+    </script>
+</body>
+</html>
